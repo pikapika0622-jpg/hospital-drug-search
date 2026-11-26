@@ -16,6 +16,7 @@ HOSPITAL_CATALOG = [
     {"id": "edah", "name": "義大醫院", "mode": "auto", "url": "https://dept.edah.org.tw/ph/asp/search.asp?TAB=1&orgby=ED"},
     {"id": "csh", "name": "中山醫學大學附設醫院", "mode": "auto", "url": "https://www.csh.org.tw/DrugQuery/NewDrugQuery.aspx"},
     {"id": "vghks", "name": "高雄榮民總醫院", "mode": "auto", "url": "https://www2.vghks.gov.tw/DIWEB/DIQuerySql.jsp"},
+    {"id": "cch", "name": "彰化基督教醫院", "mode": "auto", "url": "https://www.cch.org.tw/drug.aspx"},
     {"id": "vghtpe", "name": "臺北榮民總醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://www7.vghtpe.gov.tw/home/index"},
     {"id": "nckuh", "name": "成大醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://web.hosp.ncku.edu.tw/pharmacy/"},
     {"id": "tsgh", "name": "三軍總醫院", "mode": "manual", "reason": "Cloudflare 防護", "url": "https://wwwv.tsgh.ndmctsgh.edu.tw/unit/10026/25855"},
@@ -24,11 +25,10 @@ HOSPITAL_CATALOG = [
     {"id": "kmuh", "name": "高雄醫學大學附設中和紀念醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.kmuh.org.tw/web/kmuhdept/pill/"},
     {"id": "cgh", "name": "國泰醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.cgh.org.tw/ec99/rwd112/category.asp?category_id=15"},
     {"id": "femh", "name": "亞東紀念醫院", "mode": "manual", "reason": "藥理分類目錄頁", "url": "https://www.e-pharm.info/safety/drug-information/femh-formulary"},
-    {"id": "vghtc", "name": "臺中榮民總醫院", "mode": "manual", "reason": "需從院網進入", "url": "https://www.vghtc.gov.tw/UnitPage/UnitContentView?WebMenuID=35069f8d-2ef4-4f8a-8648-f0ef5fca7fd7&UnitDefaultTemplate=1"},
+    {"id": "vghtc", "name": "臺中榮民總醫院", "mode": "manual", "reason": "API欄位對接中", "url": "https://www3.vghtc.gov.tw:8443/pharmacyHandbook/#/education/search"},
     {"id": "skh", "name": "新光醫院", "mode": "manual", "reason": "需從院網進入", "url": "https://www.skh.org.tw/"},
     {"id": "cgmh", "name": "林口長庚紀念醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cgmh.org.tw/"},
     {"id": "chimei", "name": "奇美醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.chimei.org.tw/"},
-    {"id": "cch", "name": "彰化基督教醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cch.org.tw/"},
     {"id": "cmuh", "name": "中國醫藥大學附設醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cmuh.cmu.edu.tw/"},
 ]
 
@@ -168,11 +168,9 @@ async def crawl_csh(context, keyword: str):
         for tr in soup.find_all("tr"):
             if tr.find("tr"):
                 continue
-            # 保留空白儲存格避免欄位錯位
             raw_cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"], recursive=False)]
             non_empty = [c for c in raw_cells if c]
             if len(non_empty) >= 3 and keyword.lower() in " ".join(non_empty).lower() and "學名" not in non_empty[0]:
-                # 找出學名所在欄位索引，推算英文名與中文名
                 kw_idx = next((i for i, v in enumerate(non_empty) if keyword.lower() in v.lower()), -1)
                 if kw_idx >= 2:
                     brand_en = non_empty[kw_idx - 2]
@@ -213,7 +211,6 @@ async def crawl_vghks(context, keyword: str):
                 continue
             raw_cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"], recursive=False)]
             if len(raw_cells) >= 4 and keyword.lower() in " ".join(raw_cells).lower() and "學名" not in raw_cells[0]:
-                # 高榮欄位：[0]院內碼, [1]英文商品名, [2]健保碼, [3]中文商品名
                 brand_en = raw_cells[1] if raw_cells[1] and raw_cells[1] not in ["-", "--"] else ""
                 nhi_code = raw_cells[2] if len(raw_cells) > 2 else ""
                 brand_zh = raw_cells[3] if len(raw_cells) > 3 else ""
@@ -230,6 +227,67 @@ async def crawl_vghks(context, keyword: str):
                 })
     except Exception as e:
         print("VGHKS error:", e)
+    finally:
+        await page.close()
+    return items
+
+async def crawl_cch(context, keyword: str):
+    items = []
+    page = await context.new_page()
+    try:
+        await page.goto("https://www.cch.org.tw/drug.aspx", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1500)
+        await page.fill("#Keyword_txt", keyword)
+        await page.click("#QueryBtn1")
+        await page.wait_for_timeout(3000)
+        soup = BeautifulSoup(await page.content(), "html.parser")
+
+        detail_targets = []
+        seen_urls = set()
+        for tr in soup.find_all("tr"):
+            row_txt = tr.get_text(" ", strip=True)
+            a_tag = tr.find("a", href=re.compile(r"drug_2\.aspx", re.I))
+            if a_tag and keyword.lower() in row_txt.lower():
+                full_url = urllib.parse.urljoin("https://www.cch.org.tw/", a_tag["href"])
+                if full_url not in seen_urls:
+                    seen_urls.add(full_url)
+                    tds = [c.get_text(" ", strip=True) for c in tr.find_all("td")]
+                    detail_targets.append((full_url, tds))
+
+        for detail_url, fallback_tds in detail_targets[:15]:
+            generic_spec = fallback_tds[0] if len(fallback_tds) > 0 else keyword
+            brand_zh = fallback_tds[1] if len(fallback_tds) > 1 else ""
+            brand_en = ""
+            manufactory = ""
+            try:
+                resp = await context.request.get(detail_url, timeout=15000)
+                d_soup = BeautifulSoup(await resp.text(), "html.parser")
+                d_rows = d_soup.find_all("tr")
+                for idx, dtr in enumerate(d_rows):
+                    dcells = [re.sub(r"\s+", " ", c.get_text(" ", strip=True)).strip() for c in dtr.find_all(["td", "th"])]
+                    if len(dcells) >= 3 and "商品名" in dcells[1] and idx + 1 < len(d_rows):
+                        vcells = [re.sub(r"\s+", " ", c.get_text(" ", strip=True)).strip() for c in d_rows[idx + 1].find_all(["td", "th"])]
+                        if len(vcells) >= 3:
+                            generic_spec = vcells[0] or generic_spec
+                            brand_en = vcells[1]
+                            brand_zh = vcells[2] or brand_zh
+                    elif len(dcells) >= 2 and "廠牌" in dcells[0]:
+                        manufactory = dcells[1]
+            except Exception as de:
+                print("CCH detail error:", de)
+
+            items.append({
+                "hospital_id": "cch",
+                "hospital_name": "彰化基督教醫院",
+                "brand_key": extract_brand_key(brand_en, brand_zh),
+                "brand_en": brand_en if brand_en else brand_zh,
+                "brand_zh": brand_zh,
+                "generic_spec": generic_spec,
+                "note": manufactory if manufactory else "正常收載",
+                "search_url": detail_url
+            })
+    except Exception as e:
+        print("CCH error:", e)
     finally:
         await page.close()
     return items
@@ -252,6 +310,7 @@ async def crawl_all(keyword: str):
             crawl_edah(context, keyword),
             crawl_csh(context, keyword),
             crawl_vghks(context, keyword),
+            crawl_cch(context, keyword),
         )
         records = [item for sublist in results for item in sublist]
         await browser.close()
