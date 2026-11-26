@@ -18,18 +18,21 @@ HOSPITAL_CATALOG = [
     {"id": "vghks", "name": "高雄榮民總醫院", "mode": "auto", "url": "https://www2.vghks.gov.tw/DIWEB/DIQuerySql.jsp"},
     {"id": "cch", "name": "彰化基督教醫院", "mode": "auto", "url": "https://www.cch.org.tw/drug.aspx"},
     {"id": "vghtc", "name": "臺中榮民總醫院", "mode": "auto", "url": "https://www3.vghtc.gov.tw:8443/pharmacyHandbook/#/education/search"},
+    {"id": "cmuh", "name": "中國醫藥大學附設醫院（含兒童醫院）", "mode": "auto", "url": "https://druginfo.cmuh.org.tw/DrugNetNew/BookInfo/DrugQuery.aspx"},
+    {"id": "cgmh", "name": "長庚醫療體系（台北/林口/高雄）", "mode": "auto", "url": "https://www.cgmh.org.tw/tw/Services/Drug"},
+    {"id": "chimei", "name": "奇美醫院（台南/永康）", "mode": "auto", "url": "https://www.chimei.org.tw/MedQuery/search"},
+    {"id": "femh", "name": "亞東紀念醫院", "mode": "auto", "url": "https://www.e-pharm.info/safety/drug-information/femh-formulary"},
     {"id": "vghtpe", "name": "臺北榮民總醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://www7.vghtpe.gov.tw/home/index"},
     {"id": "nckuh", "name": "成大醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://web.hosp.ncku.edu.tw/pharmacy/"},
+    {"id": "skh", "name": "新光醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://www.skh.org.tw/skh_regis/#/register/drug"},
     {"id": "tsgh", "name": "三軍總醫院", "mode": "manual", "reason": "Cloudflare 防護", "url": "https://wwwv.tsgh.ndmctsgh.edu.tw/unit/10026/25855"},
-    {"id": "mmh", "name": "馬偕紀念醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://mcloud.mmh.org.tw/DMZDrugFormB817/DrugQuery.html"},
+    {"id": "mmh", "name": "馬偕紀念醫院（台北/淡水）", "mode": "manual", "reason": "限台灣IP連線", "url": "https://mcloud.mmh.org.tw/DMZDrugFormB817/DrugQuery.html"},
     {"id": "tzuchi", "name": "花蓮慈濟醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://hldrug.tzuchi.com.tw/tchw/IphqryChinese/DesktopModules/WesternMedicine/Pill_Search.aspx?Hospital=HL"},
     {"id": "kmuh", "name": "高雄醫學大學附設中和紀念醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.kmuh.org.tw/web/kmuhdept/pill/"},
-    {"id": "cgh", "name": "國泰醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.cgh.org.tw/ec99/rwd112/category.asp?category_id=15"},
-    {"id": "femh", "name": "亞東紀念醫院", "mode": "manual", "reason": "藥理分類目錄頁", "url": "https://www.e-pharm.info/safety/drug-information/femh-formulary"},
-    {"id": "skh", "name": "新光醫院", "mode": "manual", "reason": "需從院網進入", "url": "https://www.skh.org.tw/"},
-    {"id": "cgmh", "name": "林口長庚紀念醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cgmh.org.tw/"},
-    {"id": "chimei", "name": "奇美醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.chimei.org.tw/"},
-    {"id": "cmuh", "name": "中國醫藥大學附設醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cmuh.cmu.edu.tw/"},
+    {"id": "cgh", "name": "國泰綜合醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.cgh.org.tw/ec99/rwd112/category.asp?category_id=15"},
+    {"id": "hch", "name": "臺大醫院新竹分院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.hch.gov.tw/"},
+    {"id": "wanfang", "name": "萬芳醫院", "mode": "manual", "reason": "查詢入口確認中", "url": "https://www.wanfang.gov.tw/"},
+    {"id": "shh", "name": "雙和醫院", "mode": "manual", "reason": "查詢入口確認中", "url": "https://shh.tmu.edu.tw/"},
 ]
 
 def extract_brand_key(brand_en: str, fallback_zh: str = "") -> str:
@@ -320,6 +323,163 @@ async def crawl_vghtc(context, keyword: str):
         print("VGHTC error:", e)
     return items
 
+async def crawl_cmuh(context, keyword: str):
+    items = []
+    page = await context.new_page()
+    try:
+        await page.goto("https://druginfo.cmuh.org.tw/DrugNetNew/BookInfo/DrugQuery.aspx", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1500)
+        await page.fill("#txtkeyword", keyword)
+        await page.click("#Button1")
+        await page.wait_for_timeout(3000)
+        soup = BeautifulSoup(await page.content(), "html.parser")
+        for tr in soup.find_all("tr"):
+            if tr.find("tr"):
+                continue
+            cells = [re.sub(r"\s+", " ", c.get_text(" ", strip=True)).strip() for c in tr.find_all(["td", "th"], recursive=False)]
+            if len(cells) >= 4 and keyword.lower() in " ".join(cells).lower() and "醫令代碼" not in cells[0]:
+                items.append({
+                    "hospital_id": "cmuh",
+                    "hospital_name": "中國醫藥大學附設醫院（含兒童醫院）",
+                    "brand_key": extract_brand_key(cells[2], cells[1]),
+                    "brand_en": cells[2] if cells[2] else cells[1],
+                    "brand_zh": cells[1],
+                    "generic_spec": cells[3],
+                    "note": f"醫令碼:{cells[0]}" if cells[0] else "正常收載",
+                    "search_url": "https://druginfo.cmuh.org.tw/DrugNetNew/BookInfo/DrugQuery.aspx"
+                })
+    except Exception as e:
+        print("CMUH error:", e)
+    finally:
+        await page.close()
+    return items
+
+async def crawl_cgmh(context, keyword: str):
+    items = []
+    page = await context.new_page()
+    try:
+        encoded_kw = urllib.parse.quote(keyword)
+        url = f"https://www.cgmh.org.tw/tw/Services/DrugSearch?keyword={encoded_kw}"
+        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(2500)
+        soup = BeautifulSoup(await page.content(), "html.parser")
+        seen = set()
+        for tr in soup.find_all("tr"):
+            cells = [re.sub(r"\s+", " ", c.get_text(" ", strip=True)).strip() for c in tr.find_all(["td", "th"])]
+            if not cells or "商品名：" not in cells[0] or keyword.lower() not in cells[0].lower():
+                continue
+            txt = cells[0]
+            code_m = re.match(r"^([A-Z0-9]+)\s+商品名：", txt)
+            code = code_m.group(1) if code_m else ""
+            trade_m = re.search(r"商品名：(.+?)\s+學名：", txt)
+            trade_full = trade_m.group(1).strip() if trade_m else ""
+            gen_m = re.search(r"學名：(.+?)(?:\s+副作用：|\s+適應症：|\s+異動日期：|$)", txt)
+            generic_spec = gen_m.group(1).strip() if gen_m else keyword
+
+            zh_m = re.search(r"[\u4e00-\u9fff]", trade_full)
+            if zh_m:
+                brand_en = trade_full[:zh_m.start()].strip()
+                brand_zh = trade_full[zh_m.start():].strip()
+            else:
+                brand_en = trade_full
+                brand_zh = ""
+
+            dedup_key = (code, brand_en, generic_spec)
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+
+            items.append({
+                "hospital_id": "cgmh",
+                "hospital_name": "長庚醫療體系（台北/林口/高雄）",
+                "brand_key": extract_brand_key(brand_en, brand_zh),
+                "brand_en": brand_en if brand_en else brand_zh,
+                "brand_zh": brand_zh,
+                "generic_spec": generic_spec,
+                "note": f"院內碼:{code}" if code else "正常收載",
+                "search_url": url
+            })
+    except Exception as e:
+        print("CGMH error:", e)
+    finally:
+        await page.close()
+    return items
+
+async def crawl_chimei(context, keyword: str):
+    items = []
+    page = await context.new_page()
+    try:
+        await page.goto("https://www.chimei.org.tw/MedQuery/search", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1500)
+        await page.fill("#keyword", keyword)
+        await page.locator("button[type='submit']").first.click()
+        await page.wait_for_timeout(2500)
+
+        med_links = page.locator(".med-link")
+        count = await med_links.count()
+        for i in range(min(count, 15)):
+            await med_links.nth(i).click()
+            await page.wait_for_timeout(1500)
+            body_txt = await page.evaluate("() => document.body.innerText")
+            lines = [ln.strip() for ln in body_txt.splitlines() if ln.strip()]
+            info = {}
+            for idx, ln in enumerate(lines):
+                if ln in ["藥品代碼", "商品名", "學名", "中文名", "健保代碼", "品牌/代理商"] and idx + 1 < len(lines):
+                    info[ln] = lines[idx + 1]
+            brand_en = info.get("商品名", "")
+            brand_zh = info.get("中文名", "")
+            generic_spec = info.get("學名", keyword)
+            vendor = info.get("品牌/代理商", "").rstrip("/").strip()
+            if brand_en or brand_zh:
+                items.append({
+                    "hospital_id": "chimei",
+                    "hospital_name": "奇美醫院（台南/永康）",
+                    "brand_key": extract_brand_key(brand_en, brand_zh),
+                    "brand_en": brand_en if brand_en else brand_zh,
+                    "brand_zh": brand_zh,
+                    "generic_spec": generic_spec,
+                    "note": vendor if vendor else "正常收載",
+                    "search_url": "https://www.chimei.org.tw/MedQuery/search"
+                })
+    except Exception as e:
+        print("CHIMEI error:", e)
+    finally:
+        await page.close()
+    return items
+
+async def crawl_femh(context, keyword: str):
+    items = []
+    page = await context.new_page()
+    try:
+        await page.goto("https://www.e-pharm.info/safety/drug-information/femh-formulary", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1500)
+        await page.locator("input[name='elements[e5571ded-b1aa-402a-a883-19546b579bcb]']").fill(keyword)
+        await page.locator("button[type='submit']:visible").first.click()
+        await page.wait_for_timeout(2500)
+        soup = BeautifulSoup(await page.content(), "html.parser")
+        for teaser in soup.select(".teaser-item"):
+            title_el = teaser.select_one("h2.pos-title")
+            a_el = teaser.select_one("a[href*='/femh-formulary/item/']")
+            brand_zh = title_el.get_text(strip=True) if title_el else ""
+            brand_en = (a_el.get("title") or "").strip() if a_el else ""
+            item_url = urllib.parse.urljoin("https://www.e-pharm.info", a_el["href"]) if a_el else "https://www.e-pharm.info/safety/drug-information/femh-formulary"
+            if brand_zh or brand_en:
+                items.append({
+                    "hospital_id": "femh",
+                    "hospital_name": "亞東紀念醫院",
+                    "brand_key": extract_brand_key(brand_en, brand_zh),
+                    "brand_en": brand_en if brand_en else brand_zh,
+                    "brand_zh": brand_zh,
+                    "generic_spec": keyword,
+                    "note": "正常收載",
+                    "search_url": item_url
+                })
+    except Exception as e:
+        print("FEMH error:", e)
+    finally:
+        await page.close()
+    return items
+
 async def crawl_all(keyword: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -340,6 +500,10 @@ async def crawl_all(keyword: str):
             crawl_vghks(context, keyword),
             crawl_cch(context, keyword),
             crawl_vghtc(context, keyword),
+            crawl_cmuh(context, keyword),
+            crawl_cgmh(context, keyword),
+            crawl_chimei(context, keyword),
+            crawl_femh(context, keyword),
         )
         records = [item for sublist in results for item in sublist]
         await browser.close()
