@@ -1,0 +1,34 @@
+name: Run Medical Center Drug Search
+
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: '藥品成分關鍵字'
+        required: true
+      webhook_url:
+        description: '回傳結果的 GAS Web App URL'
+        required: false
+        default: ''
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 playwright
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Execute crawler
+        run: |
+          python crawler.py --keyword "${{ github.event.inputs.keyword }}" --webhook "${{ github.event.inputs.webhook_url }}"
