@@ -32,9 +32,15 @@ HOSPITAL_CATALOG = [
     {"id": "cmuh", "name": "中國醫藥大學附設醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cmuh.cmu.edu.tw/"},
 ]
 
-def extract_brand_key(brand_en: str) -> str:
-    match = re.search(r"[A-Za-z][A-Za-z0-9\-]*", brand_en or "")
-    return match.group(0).capitalize() if match else "Unknown"
+def extract_brand_key(brand_en: str, fallback_zh: str = "") -> str:
+    cleaned = (brand_en or "").strip()
+    if cleaned and cleaned not in ["-", "--", "/"]:
+        match = re.search(r"[A-Za-z][A-Za-z0-9\-]*", cleaned)
+        if match:
+            return match.group(0).capitalize()
+    if fallback_zh:
+        return re.sub(r"[\s（(].*$", "", fallback_zh)[:8]
+    return "Unknown"
 
 async def crawl_ntuh(context, keyword: str):
     items = []
@@ -60,7 +66,7 @@ async def crawl_ntuh(context, keyword: str):
                     items.append({
                         "hospital_id": "ntuh",
                         "hospital_name": "台大醫院",
-                        "brand_key": extract_brand_key(cells[2]),
+                        "brand_key": extract_brand_key(cells[2], cells[1]),
                         "brand_en": cells[2],
                         "brand_zh": cells[1],
                         "generic_spec": cells[0],
@@ -90,7 +96,7 @@ async def crawl_tptzuchi(context, keyword: str):
                 items.append({
                     "hospital_id": "tptzuchi",
                     "hospital_name": "台北慈濟醫院",
-                    "brand_key": extract_brand_key(cells[2]),
+                    "brand_key": extract_brand_key(cells[2], cells[4]),
                     "brand_en": cells[2],
                     "brand_zh": cells[4],
                     "generic_spec": cells[3],
@@ -121,7 +127,7 @@ async def crawl_edah(context, keyword: str):
                 items.append({
                     "hospital_id": "edah",
                     "hospital_name": "義大醫院",
-                    "brand_key": extract_brand_key(cells[2]),
+                    "brand_key": extract_brand_key(cells[2], cells[3]),
                     "brand_en": f"{cells[2]} ({cells[4]})",
                     "brand_zh": cells[3],
                     "generic_spec": f"{cells[0]} {cells[4]}",
@@ -141,25 +147,48 @@ async def crawl_csh(context, keyword: str):
         await page.goto("https://www.csh.org.tw/DrugQuery/NewDrugQuery.aspx", wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(1500)
         await page.fill("#tbQuery", keyword)
-        btn = page.locator("#tbQuery").locator("xpath=following::*[self::button or (self::input and (@type='submit' or @type='button'))][1]")
-        if await btn.count() > 0:
-            await btn.click()
-        else:
+        clicked = False
+        for sel in [
+            "#tbQuery ~ input[type='submit']",
+            "#tbQuery ~ input[type='image']",
+            "#tbQuery ~ button",
+            "input[value*='查詢']",
+            "button:has-text('查詢')",
+            "input[id*='btn' i]"
+        ]:
+            loc = page.locator(sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                await loc.click()
+                clicked = True
+                break
+        if not clicked:
             await page.locator("#tbQuery").press("Enter")
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(3500)
         soup = BeautifulSoup(await page.content(), "html.parser")
         for tr in soup.find_all("tr"):
             if tr.find("tr"):
                 continue
-            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"], recursive=False) if c.get_text(strip=True)]
-            if len(cells) >= 4 and keyword.lower() in " ".join(cells).lower() and "學名" not in cells[0]:
+            # 保留空白儲存格避免欄位錯位
+            raw_cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"], recursive=False)]
+            non_empty = [c for c in raw_cells if c]
+            if len(non_empty) >= 3 and keyword.lower() in " ".join(non_empty).lower() and "學名" not in non_empty[0]:
+                # 找出學名所在欄位索引，推算英文名與中文名
+                kw_idx = next((i for i, v in enumerate(non_empty) if keyword.lower() in v.lower()), -1)
+                if kw_idx >= 2:
+                    brand_en = non_empty[kw_idx - 2]
+                    brand_zh = non_empty[kw_idx - 1]
+                    generic_spec = non_empty[kw_idx]
+                else:
+                    brand_en = non_empty[0]
+                    brand_zh = non_empty[1]
+                    generic_spec = non_empty[2]
                 items.append({
                     "hospital_id": "csh",
                     "hospital_name": "中山醫學大學附設醫院",
-                    "brand_key": extract_brand_key(cells[1]),
-                    "brand_en": cells[1],
-                    "brand_zh": cells[2],
-                    "generic_spec": cells[3],
+                    "brand_key": extract_brand_key(brand_en, brand_zh),
+                    "brand_en": brand_en,
+                    "brand_zh": brand_zh,
+                    "generic_spec": generic_spec,
                     "note": "正常收載",
                     "search_url": "https://www.csh.org.tw/DrugQuery/NewDrugQuery.aspx"
                 })
@@ -182,16 +211,21 @@ async def crawl_vghks(context, keyword: str):
         for tr in soup.find_all("tr"):
             if tr.find("tr"):
                 continue
-            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"], recursive=False) if c.get_text(strip=True)]
-            if len(cells) >= 3 and keyword.lower() in " ".join(cells).lower() and "學名" not in cells[0]:
+            raw_cells = [c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"], recursive=False)]
+            if len(raw_cells) >= 4 and keyword.lower() in " ".join(raw_cells).lower() and "學名" not in raw_cells[0]:
+                # 高榮欄位：[0]院內碼, [1]英文商品名, [2]健保碼, [3]中文商品名
+                brand_en = raw_cells[1] if raw_cells[1] and raw_cells[1] not in ["-", "--"] else ""
+                nhi_code = raw_cells[2] if len(raw_cells) > 2 else ""
+                brand_zh = raw_cells[3] if len(raw_cells) > 3 else ""
+                display_en = brand_en if brand_en else f"{brand_zh} ({nhi_code})"
                 items.append({
                     "hospital_id": "vghks",
                     "hospital_name": "高雄榮民總醫院",
-                    "brand_key": extract_brand_key(cells[1]),
-                    "brand_en": cells[1],
-                    "brand_zh": cells[2] if len(cells) > 2 else "",
-                    "generic_spec": cells[3] if len(cells) > 3 else keyword,
-                    "note": "正常收載",
+                    "brand_key": extract_brand_key(brand_en, brand_zh),
+                    "brand_en": display_en,
+                    "brand_zh": brand_zh,
+                    "generic_spec": keyword,
+                    "note": f"健保碼:{nhi_code}" if nhi_code else "正常收載",
                     "search_url": "https://www2.vghks.gov.tw/DIWEB/DIQuerySql.jsp"
                 })
     except Exception as e:
@@ -212,7 +246,6 @@ async def crawl_all(keyword: str):
             ignore_https_errors=True
         )
 
-        # 5 家醫學中心同步並行抓取
         results = await asyncio.gather(
             crawl_ntuh(context, keyword),
             crawl_tptzuchi(context, keyword),
