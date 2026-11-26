@@ -33,6 +33,11 @@ HOSPITAL_CATALOG = [
     {"id": "hch", "name": "臺大醫院新竹分院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.hch.gov.tw/"},
     {"id": "wanfang", "name": "萬芳醫院", "mode": "manual", "reason": "查詢入口確認中", "url": "https://www.wanfang.gov.tw/"},
     {"id": "shh", "name": "雙和醫院", "mode": "manual", "reason": "查詢入口確認中", "url": "https://shh.tmu.edu.tw/"},
+    { id: "kmuh", name: "高雄醫學大學附設中和紀念醫院", mode: "manual", reason: "限台灣IP(可用本機腳本補抓)", url: "https://www.kmuh.org.tw/web/DrugSearch/DrugSearch.aspx" },
+    { id: "hch", name: "臺大醫院新竹分院", mode: "manual", reason: "需驗證碼保護", url: "https://www.hch.gov.tw/?aid=612" },
+    { id: "cgh", name: "國泰綜合醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://www.cgh.org.tw/ec99/rwd1320/category.asp?category_id=113" },
+    { id: "wanfang", name: "萬芳醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://www.wanfang.gov.tw/departments/WanfangClass_50/education" },
+    { id: "shh", name: "雙和醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://shh.tmu.edu.tw/page/Pharm.aspx" }
 ]
 
 def extract_brand_key(brand_en: str, fallback_zh: str = "") -> str:
