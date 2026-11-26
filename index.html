@@ -377,6 +377,16 @@
   }
 
   render();
+window.addEventListener("DOMContentLoaded", () => {
+      const q = new URLSearchParams(window.location.search).get("q");
+      if (q) {
+        const inputEl = document.querySelector('input[type="text"]');
+        if (inputEl) {
+          inputEl.value = q;
+          if (typeof startSearch === "function") startSearch();
+        }
+      }
+    });
 </script>
 </body>
 </html>
