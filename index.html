@@ -29,12 +29,6 @@
       padding: 0 24px; border-radius: 8px; border: none; background: #fff;
       color: var(--primary); font-weight: 700; font-size: 15px; cursor: pointer;
     }
-    .hot-tags { margin-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
-    .tag-btn {
-      background: #e6efe9; color: var(--primary); border: none; border-radius: 20px;
-      padding: 5px 14px; font-size: 13px; cursor: pointer; font-weight: 600;
-    }
-    .tag-btn:hover { background: #fff; }
 
     main { max-width: 1100px; margin: 24px auto; padding: 0 20px 60px; }
     .toolbar {
@@ -65,6 +59,7 @@
     }
     .kw-badge { background: var(--primary-light); color: var(--primary); padding: 3px 10px; border-radius: 6px; font-weight: 700; }
     .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; margin-right: 6px; }
+    .status-dot.idle { background: #94a3b8; }
     .status-dot.loading { background: #d97706; animation: pulse 1s infinite; }
     .status-dot.error { background: #dc2626; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
@@ -107,16 +102,8 @@
 <header>
   <h1>醫學中心藥品廠牌查詢</h1>
   <div class="search-row">
-    <input type="text" id="kwInput" value="febuxostat" placeholder="請輸入藥品成分學名 (例如: febuxostat, famotidine)..." onkeydown="if(event.key==='Enter') startSearch()" />
+    <input type="text" id="kwInput" value="" placeholder="請輸入藥品成分學名 (例如: febuxostat, indomethacin)..." onkeydown="if(event.key==='Enter') startSearch()" />
     <button onclick="startSearch()">查詢</button>
-  </div>
-  <div class="hot-tags">
-    <span>熱門成分：</span>
-    <button class="tag-btn" onclick="quickSearch('febuxostat')">febuxostat</button>
-    <button class="tag-btn" onclick="quickSearch('enzalutamide')">enzalutamide</button>
-    <button class="tag-btn" onclick="quickSearch('acetylcysteine')">acetylcysteine</button>
-    <button class="tag-btn" onclick="quickSearch('famotidine')">famotidine</button>
-    <button class="tag-btn" onclick="quickSearch('lansoprazole')">lansoprazole</button>
   </div>
 </header>
 
@@ -143,20 +130,15 @@
 </main>
 
 <script>
-  const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzdFR_0riipYUhz19OKj7ls4m_jGqg0Ez5BPCHxoOQbBhw_Fgp8Zh5GOJhU3sPc1cXO/exec";
+  const GAS_API_URL = "貼上你的_GAS_網頁應用程式網址";
 
   let currentMode = "brand";
   let pollTimer = null;
   let currentData = {
-    keyword: "febuxostat",
-    status: "completed",
+    keyword: "",
+    status: "idle",
     errorMsg: "",
-    records: [
-      { hospital_id: "ntuh", hospital_name: "台大醫院", brand_key: "Feburic", brand_en: "Feburic FC Tablet 80 mg/tab", brand_zh: "福避痛膜衣錠", generic_spec: "Febuxostat", note: "正常收載", search_url: "https://www.ntuh.gov.tw/phr/Fpage.action?muid=2077&fid=1939" },
-      { hospital_id: "tptzuchi", hospital_name: "台北慈濟醫院", brand_key: "Feburic", brand_en: "Feburic福避痛 F.C 80mg/tab (Febuxostat)", brand_zh: "福避痛膜衣錠", generic_spec: "Febuxostat", note: "門:停藥 / 急:停藥 / 住:停藥", search_url: "https://tp-his.tzuchi-healthcare.org.tw/DrugPharm/ComPharmacopoeia/AllInOne/Med_Search_AllInOne.aspx" },
-      { hospital_id: "tptzuchi", hospital_name: "台北慈濟醫院", brand_key: "Fetrin", brand_en: "Fetrin F.C Tablets 80mg/tab(Febuxostat)", brand_zh: "痛悅定膜衣錠▲1150930換廠", generic_spec: "Febuxostat", note: "門:正常 / 急:正常 / 住:正常", search_url: "https://tp-his.tzuchi-healthcare.org.tw/DrugPharm/ComPharmacopoeia/AllInOne/Med_Search_AllInOne.aspx" },
-      { hospital_id: "edah", hospital_name: "義大醫院", brand_key: "Febuton", brand_en: "Febuton (80mg/FC. tab)", brand_zh: "達理痛膜衣錠", generic_spec: "Febuxostat 80mg/FC. tab", note: "正常收載", search_url: "https://dept.edah.org.tw/ph/asp/search.asp?TAB=1&orgby=ED" }
-    ],
+    records: [],
     hospitals: [
       { id: "ntuh", name: "台大醫院", mode: "auto", url: "https://www.ntuh.gov.tw/phr/Fpage.action?muid=2077&fid=1939" },
       { id: "tptzuchi", name: "台北慈濟醫院", mode: "auto", url: "https://tp-his.tzuchi-healthcare.org.tw/DrugPharm/ComPharmacopoeia/AllInOne/Med_Search_AllInOne.aspx" },
@@ -179,11 +161,6 @@
       { id: "cmuh", name: "中國醫藥大學附設醫院", mode: "manual", reason: "舊連結待更新", url: "https://www.cmuh.cmu.edu.tw/" }
     ]
   };
-
-  function quickSearch(kw) {
-    document.getElementById("kwInput").value = kw;
-    startSearch();
-  }
 
   function switchMode(mode) {
     currentMode = mode;
@@ -254,30 +231,43 @@
   function render() {
     const brands = groupByBrand(currentData.records);
     const uniqueHosps = new Set(currentData.records.map(r => r.hospital_id));
+    const isIdle = currentData.status === "idle";
     const isRunning = currentData.status === "running";
     const isError = currentData.status === "error";
 
-    let statusText = `已完成 (${currentData.hospitals.length} 家醫學中心目錄)`;
-    let dotClass = "";
-    if (isRunning) {
-      statusText = "正在背景執行跨院查詢中（約需 40～60 秒）...";
-      dotClass = "loading";
-    } else if (isError) {
-      statusText = currentData.errorMsg;
-      dotClass = "error";
-    }
+    if (isIdle) {
+      document.getElementById("summaryBar").innerHTML = `
+        <div style="color:var(--muted);">請在上方輸入藥品成分學名並點擊「查詢」</div>
+        <div><span class="status-dot idle"></span>待命就緒 (${currentData.hospitals.length} 家醫學中心目錄)</div>
+      `;
+      const area = document.getElementById("contentArea");
+      if (currentMode === "brand") {
+        area.innerHTML = "";
+        return;
+      }
+    } else {
+      let statusText = `已完成 (${currentData.hospitals.length} 家醫學中心目錄)`;
+      let dotClass = "";
+      if (isRunning) {
+        statusText = "正在背景執行跨院查詢中（約需 40～60 秒）...";
+        dotClass = "loading";
+      } else if (isError) {
+        statusText = currentData.errorMsg;
+        dotClass = "error";
+      }
 
-    document.getElementById("summaryBar").innerHTML = `
-      <div>
-        查詢關鍵字：<span class="kw-badge">${currentData.keyword}</span>
-        &nbsp; 共聚合為 <strong>${brands.length}</strong> 個廠牌 ·
-        自動化查得 <strong>${uniqueHosps.size}</strong> 家醫學中心
-      </div>
-      <div>
-        <span class="status-dot ${dotClass}"></span>
-        ${statusText}
-      </div>
-    `;
+      document.getElementById("summaryBar").innerHTML = `
+        <div>
+          查詢關鍵字：<span class="kw-badge">${currentData.keyword}</span>
+          &nbsp; 共聚合為 <strong>${brands.length}</strong> 個廠牌 ·
+          自動化查得 <strong>${uniqueHosps.size}</strong> 家醫學中心
+        </div>
+        <div>
+          <span class="status-dot ${dotClass}"></span>
+          ${statusText}
+        </div>
+      `;
+    }
 
     const area = document.getElementById("contentArea");
     if (currentMode === "brand") {
@@ -318,7 +308,7 @@
                   ${hRecords.map(r => `<tr><td><strong>${r.brand_en}</strong><br><span style="color:#555;">${r.brand_zh}</span></td><td>${r.generic_spec}</td><td>${r.note}</td></tr>`).join('')}
                 </tbody>
               </table>
-            ` : `<div style="font-size:13px;color:var(--muted);">${h.mode === 'manual' ? '請點擊右側「查詢頁 →」前往該院系統檢視' : '此院自動化查詢無相符品項'}</div>`}
+            ` : `<div style="font-size:13px;color:var(--muted);">${h.mode === 'manual' ? '請點擊右側「查詢頁 →」前往該院系統檢視' : (isIdle ? '尚未查詢' : '此院自動化查詢無相符品項')}</div>`}
           </div>
         `;
       }).join('');
@@ -326,6 +316,10 @@
   }
 
   function exportExcel() {
+    if (!currentData.keyword || currentData.records.length === 0) {
+      alert("請先查詢藥品成分並取得資料後再匯出。");
+      return;
+    }
     const wb = XLSX.utils.book_new();
     const brands = groupByBrand(currentData.records);
 
@@ -337,7 +331,7 @@
       "採用醫學中心家數": b.items.length,
       "採用醫院明細": b.items.map(i => `${i.hospital_name}(${i.note})`).join("、")
     }));
-    const ws1 = XLSX.utils.json_to_sheet(brandSheetData.length ? brandSheetData : [{ "提示": "無自動化廠牌資料" }]);
+    const ws1 = XLSX.utils.json_to_sheet(brandSheetData);
     XLSX.utils.book_append_sheet(wb, ws1, "依廠牌彙整");
 
     const hospSheetData = currentData.hospitals.map(h => {
@@ -370,6 +364,10 @@
   }
 
   function exportPDF() {
+    if (!currentData.keyword || currentData.records.length === 0) {
+      alert("請先查詢藥品成分並取得資料後再匯出。");
+      return;
+    }
     const now = new Date().toLocaleString("zh-TW", { hour12: false });
     document.getElementById("printMeta").innerText = `查詢成分：${currentData.keyword} ｜ 顯示模式：${currentMode === 'brand' ? '依廠牌彙整' : '依醫院明細'} ｜ 匯出時間：${now}`;
     window.print();
