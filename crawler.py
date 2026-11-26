@@ -37,7 +37,7 @@ HOSPITAL_CATALOG = [
     { id: "hch", name: "臺大醫院新竹分院", mode: "manual", reason: "需驗證碼保護", url: "https://www.hch.gov.tw/?aid=612" },
     { id: "cgh", name: "國泰綜合醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://www.cgh.org.tw/ec99/rwd1320/category.asp?category_id=113" },
     { id: "wanfang", name: "萬芳醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://www.wanfang.gov.tw/departments/WanfangClass_50/education" },
-    { id: "shh", name: "雙和醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://shh.tmu.edu.tw/page/Pharm.aspx" }
+    { id: "shh", name: "雙和醫院", mode: "manual", reason: "無公開處方集查詢", url: "https://shh.tmu.edu.tw/page/Pharm.aspx" },
 ]
 
 def extract_brand_key(brand_en: str, fallback_zh: str = "") -> str:
