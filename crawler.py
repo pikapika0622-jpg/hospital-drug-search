@@ -17,6 +17,7 @@ HOSPITAL_CATALOG = [
     {"id": "csh", "name": "中山醫學大學附設醫院", "mode": "auto", "url": "https://www.csh.org.tw/DrugQuery/NewDrugQuery.aspx"},
     {"id": "vghks", "name": "高雄榮民總醫院", "mode": "auto", "url": "https://www2.vghks.gov.tw/DIWEB/DIQuerySql.jsp"},
     {"id": "cch", "name": "彰化基督教醫院", "mode": "auto", "url": "https://www.cch.org.tw/drug.aspx"},
+    {"id": "vghtc", "name": "臺中榮民總醫院", "mode": "auto", "url": "https://www3.vghtc.gov.tw:8443/pharmacyHandbook/#/education/search"},
     {"id": "vghtpe", "name": "臺北榮民總醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://www7.vghtpe.gov.tw/home/index"},
     {"id": "nckuh", "name": "成大醫院", "mode": "manual", "reason": "需圖形驗證碼", "url": "https://web.hosp.ncku.edu.tw/pharmacy/"},
     {"id": "tsgh", "name": "三軍總醫院", "mode": "manual", "reason": "Cloudflare 防護", "url": "https://wwwv.tsgh.ndmctsgh.edu.tw/unit/10026/25855"},
@@ -25,7 +26,6 @@ HOSPITAL_CATALOG = [
     {"id": "kmuh", "name": "高雄醫學大學附設中和紀念醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.kmuh.org.tw/web/kmuhdept/pill/"},
     {"id": "cgh", "name": "國泰醫院", "mode": "manual", "reason": "限台灣IP連線", "url": "https://www.cgh.org.tw/ec99/rwd112/category.asp?category_id=15"},
     {"id": "femh", "name": "亞東紀念醫院", "mode": "manual", "reason": "藥理分類目錄頁", "url": "https://www.e-pharm.info/safety/drug-information/femh-formulary"},
-    {"id": "vghtc", "name": "臺中榮民總醫院", "mode": "manual", "reason": "API欄位對接中", "url": "https://www3.vghtc.gov.tw:8443/pharmacyHandbook/#/education/search"},
     {"id": "skh", "name": "新光醫院", "mode": "manual", "reason": "需從院網進入", "url": "https://www.skh.org.tw/"},
     {"id": "cgmh", "name": "林口長庚紀念醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.cgmh.org.tw/"},
     {"id": "chimei", "name": "奇美醫院", "mode": "manual", "reason": "舊連結待更新", "url": "https://www.chimei.org.tw/"},
@@ -292,6 +292,34 @@ async def crawl_cch(context, keyword: str):
         await page.close()
     return items
 
+async def crawl_vghtc(context, keyword: str):
+    items = []
+    try:
+        encoded_kw = urllib.parse.quote(keyword)
+        api_url = f"https://www3.vghtc.gov.tw:8443/pharmacyHandbook/API/handbookSearchEducation.jsp?keyword={encoded_kw}"
+        resp = await context.request.get(api_url, timeout=15000)
+        raw_txt = (await resp.text()).strip()
+        payload = json.loads(raw_txt)
+        for row in payload.get("DATA", []):
+            brand_en = (row.get("UDNMFTDGNM") or row.get("UDDMDPNAME") or "").strip()
+            brand_zh = (row.get("UDDRGNMKJ") or "").strip()
+            generic_spec = (row.get("UDNMATDGNM") or keyword).strip()
+            drg_code = (row.get("UDNDRGCODE") or "").strip()
+            if keyword.lower() in f"{generic_spec} {brand_en} {brand_zh}".lower():
+                items.append({
+                    "hospital_id": "vghtc",
+                    "hospital_name": "臺中榮民總醫院",
+                    "brand_key": extract_brand_key(brand_en, brand_zh),
+                    "brand_en": brand_en if brand_en else brand_zh,
+                    "brand_zh": brand_zh,
+                    "generic_spec": generic_spec,
+                    "note": f"院內碼:{drg_code}" if drg_code else "正常收載",
+                    "search_url": "https://www3.vghtc.gov.tw:8443/pharmacyHandbook/#/education/search"
+                })
+    except Exception as e:
+        print("VGHTC error:", e)
+    return items
+
 async def crawl_all(keyword: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -311,6 +339,7 @@ async def crawl_all(keyword: str):
             crawl_csh(context, keyword),
             crawl_vghks(context, keyword),
             crawl_cch(context, keyword),
+            crawl_vghtc(context, keyword),
         )
         records = [item for sublist in results for item in sublist]
         await browser.close()
