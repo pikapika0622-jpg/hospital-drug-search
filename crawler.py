@@ -45,6 +45,79 @@ def extract_brand_key(brand_en: str, fallback_zh: str = "") -> str:
         return re.sub(r"[\s（(].*$", "", fallback_zh)[:8]
     return "Unknown"
 
+def extract_core_zh(zh_text: str) -> str:
+    if not zh_text:
+        return ""
+    s = re.sub(r"[▲★※].*$", "", zh_text)
+    s = re.sub(r"[（(][^）)]*[）)]", "", s)
+    s = re.sub(r"\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|%|毫克|公絲|公克|微克|毫升)", "", s, flags=re.I)
+    s = re.sub(
+        r"(膜衣錠|緩釋錠|持續性藥效錠|腸溶錠|口溶錠|咀嚼錠|發泡錠|舌下錠|糖衣錠|裸錠|錠|膠囊|軟膠囊|注射劑|注射液|點滴液|口服液|內服液|糖漿|懸液劑|顆粒劑|顆粒|散劑|軟膏|乳膏|凝膠|貼片|噴霧劑|吸入劑|眼藥水|眼藥膏)",
+        "",
+        s,
+    )
+    return re.sub(r"[\s\-_/．.]+", "", s).strip()
+
+def normalize_and_filter_records(records: list) -> list:
+    cleaned_list = []
+    zh_to_brand_key = {}
+
+    for rec in records:
+        hosp_id = rec.get("hospital_id", "")
+        brand_en = (rec.get("brand_en") or "").strip()
+        brand_zh = (rec.get("brand_zh") or "").strip()
+        note = (rec.get("note") or "").strip()
+
+        # 1. 過濾健保碼為 00 或完全無藥名的無效資料列
+        if re.search(r"健保碼\s*[:：]\s*00\b", note):
+            continue
+        if (not brand_en or brand_en.isdigit()) and not brand_zh:
+            continue
+
+        # 2. 高榮 (vghks)：將純數字院內碼移入備註欄
+        if brand_en.isdigit():
+            code_tag = f"院內碼:{brand_en}"
+            note = f"{code_tag} | {note}" if note and note != "正常收載" else code_tag
+            brand_en = ""
+
+        # 3. 中山醫 (csh)：分離簡碼 (如 FEBU) 並從中文欄擷取真實英文商品名
+        if hosp_id == "csh" and re.fullmatch(r"[A-Z0-9]{2,6}", brand_en):
+            code_tag = f"院內碼:{brand_en}"
+            note = f"{code_tag} | {note}" if note and note != "正常收載" else code_tag
+            m_en = re.match(r"^([A-Za-z][A-Za-z0-9\s\-\./]+?)\s*[\u4e00-\u9fff]", brand_zh)
+            if m_en:
+                real_en = m_en.group(1).strip()
+                brand_zh = brand_zh[m_en.end() - 1:].strip()
+                brand_en = real_en
+            else:
+                brand_en = ""
+
+        b_key = extract_brand_key(brand_en, brand_zh) if brand_en else ""
+        core_zh = extract_core_zh(brand_zh)
+
+        if b_key and b_key != "Unknown" and re.match(r"^[A-Za-z]", b_key) and len(core_zh) >= 2:
+            zh_to_brand_key.setdefault(core_zh, b_key)
+
+        rec["brand_en"] = brand_en
+        rec["brand_zh"] = brand_zh
+        rec["note"] = note
+        rec["brand_key"] = b_key
+        rec["_core_zh"] = core_zh
+        cleaned_list.append(rec)
+
+    # 4. 第二輪對齊：讓缺乏英文商品名的紀錄依核心中文名併入同一英文廠牌
+    for rec in cleaned_list:
+        core_zh = rec.pop("_core_zh", "")
+        if not rec["brand_key"] or rec["brand_key"] == "Unknown" or not re.match(r"^[A-Za-z]", rec["brand_key"]):
+            if core_zh in zh_to_brand_key:
+                rec["brand_key"] = zh_to_brand_key[core_zh]
+            elif core_zh:
+                rec["brand_key"] = core_zh
+            else:
+                rec["brand_key"] = extract_brand_key(rec["brand_en"], rec["brand_zh"])
+
+    return cleaned_list
+
 async def crawl_ntuh(context, keyword: str):
     items = []
     page = await context.new_page()
@@ -505,7 +578,8 @@ async def crawl_all(keyword: str):
             crawl_chimei(context, keyword),
             crawl_femh(context, keyword),
         )
-        records = [item for sublist in results for item in sublist]
+        raw_records = [item for sublist in results for item in sublist]
+        records = normalize_and_filter_records(raw_records)
         await browser.close()
 
     return {
