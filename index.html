@@ -217,7 +217,7 @@
         let attempts = 0;
         pollTimer = setInterval(async () => {
           attempts++;
-          if (attempts > 30) {
+          if (attempts > 45) {
             clearInterval(pollTimer);
             currentData.status = "error";
             currentData.errorMsg = "查詢逾時，請稍後再試";
